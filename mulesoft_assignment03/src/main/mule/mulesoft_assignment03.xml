@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="b9788df0-ef33-4e47-a4b0-ab99a9dd836b" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="d7303cbf-cfe2-43eb-9b09-6528302ca48c" >
+		<db:my-sql-connection host="localhost" port="3306" user="root" password="root" database="macquarie" />
+	</db:config>
+	<flow name="GetEmployeeById" doc:id="c2c2dabf-5ceb-4476-b665-87a6aeeed774" >
+		<http:listener doc:name="Listener" doc:id="007fbfa7-a5cd-45b2-9b27-d696d3a199af" config-ref="HTTP_Listener_config" path="/employee" allowedMethods="GET"/>
+		<db:select doc:name="Select" doc:id="0dd175bc-df45-4607-b304-5b90bda5a84b" config-ref="Database_Config">
+			<db:sql >select * from employee where `employee id`=:ID</db:sql>
+			<db:input-parameters ><![CDATA[#[{'ID' : attributes.queryParams.id}]]]></db:input-parameters>
+		</db:select>
+		<ee:transform doc:name="Transform Message" doc:id="5538c938-ddeb-4536-a184-011744cee594" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+if(sizeOf(payload)==1){
+	statusCode:200,
+	payload:payload
+}else{
+	statusCode:404,
+	payload:"Employee not found in DB"
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="a42c43e6-4628-4d11-805e-34758890330f" message="#[%dw 2.0
+output application/json
+---
+payload]"/>
+	</flow>
+	<flow name="updateEmployeeDetails" doc:id="a0d98fde-3aa8-4b45-8063-7657c9cc36d2" >
+		<http:listener doc:name="Listener" doc:id="0baa332a-7eb4-4147-bdc8-330db2b69afe" config-ref="HTTP_Listener_config" path="/employee/{ID}" outputMimeType="application/json" allowedMethods="PUT"/>
+		<set-variable value="#[message.payload]" doc:name="Set Variable" doc:id="1ae2ac3f-a45c-4976-835d-3f8623cb502b" variableName="employee_detail"/>
+		<db:select doc:name="Select" doc:id="738adaee-7575-44dc-8606-65f78aa1fbf7" config-ref="Database_Config">
+			<db:sql >select * from employee where `employee id`=:ID</db:sql>
+			<db:input-parameters ><![CDATA[#[{'ID' : attributes.uriParams.ID}]]]></db:input-parameters>
+		</db:select>
+		<ee:transform doc:name="Transform Message" doc:id="5b066f61-4e09-46dc-9d52-d4082f86a907" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+if(sizeOf(payload)==1){
+	statusCode:200,
+	payload:vars.employee_detail	
+}else{
+	statusCode:404,
+	payload:'Employee Not Found'
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<choice doc:name="Choice" doc:id="fbd46818-fb23-42cd-9e0d-7770e956bf6d" >
+			<when expression="#[payload.statusCode==200]">
+				<db:update doc:name="Update" doc:id="557fa3fc-9b18-4653-94e7-13e39c12c7a2" config-ref="Database_Config">
+					<db:sql >UPDATE employee
+SET
+name = :NAME,
+designation = :DESIGNATION,
+email = :EMAIL
+WHERE `employee id` = :ID</db:sql>
+					<db:input-parameters ><![CDATA[#[{
+	'ID' : vars.employee_detail.employee_id,
+	'NAME' : vars.employee_detail.name,
+	'DESIGNATION' : vars.employee_detail.designation,
+	'EMAIL' : vars.employee_detail.email
+}]]]></db:input-parameters>
+				</db:update>
+				<ee:transform doc:name="Transform Message" doc:id="4803b464-600a-4c84-9830-8f43bce7f4de" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+if(payload.affectedRows==1){
+	statusCode:202,
+	payload:"resource updated successfully"
+}else{
+	statusCode:405,
+	payload:"resource not updated successfully"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+			<otherwise >
+				<ee:transform doc:name="Transform Message" doc:id="e852f1e2-081e-45ae-b203-d11aa0d5b81f" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</otherwise>
+		</choice>
+	</flow>
+	<flow name="deleteEmployee" doc:id="a9b5b18f-3ebf-423e-8e6e-3f217527c0cf" >
+		<http:listener doc:name="Listener" doc:id="39aa2ef6-6fa8-4c6f-85ff-3a1fbb7463fd" config-ref="HTTP_Listener_config" path="/employee/{ID}" allowedMethods="DELETE"/>
+		<db:delete doc:name="Delete" doc:id="ac730bb6-47d5-46fd-a116-d9162d2966c0" config-ref="Database_Config">
+			<db:sql >DELETE FROM employee WHERE `employee id`=:ID</db:sql>
+			<db:input-parameters ><![CDATA[#[{'ID' : attributes.uriParams.ID}]]]></db:input-parameters>
+		</db:delete>
+		<ee:transform doc:name="Transform Message" doc:id="34df4739-8677-482e-ab98-a5671b4ef772" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+if(payload==1){
+	statusCode:200,
+	payload:'employee deleted'	
+}else{
+	statusCode:404,
+	payload:'Employee Not Found'
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="92786814-d9c8-4f2a-b641-c21a95a48632" message="#[payload]"/>
+	</flow>
+	<flow name="createEmployee" doc:id="a8277a03-037b-44f0-a2b3-ec8f7bf06201" >
+		<http:listener doc:name="Listener" doc:id="958afa9c-973b-41fc-9ebd-a801c04a2f13" config-ref="HTTP_Listener_config" path="/employee" allowedMethods="POST"/>
+		<set-variable value="#[message.payload]" doc:name="Set Variable" doc:id="5f9bf77f-0fc9-4792-a482-8e1a993aabd7" variableName="employee_detail"/>
+		<db:select doc:name="Select" doc:id="ded62f96-7075-4e36-af4e-59864405a571" config-ref="Database_Config">
+			<db:sql >select * from employee where email=:EMAIL</db:sql>
+			<db:input-parameters ><![CDATA[#[{'EMAIL':vars.employee_detail.email}]]]></db:input-parameters>
+		</db:select>
+		<ee:transform doc:name="Transform Message" doc:id="80511a05-083c-41b7-b4de-9b810177fd09" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<choice doc:name="Choice" doc:id="5631b106-a2b5-4c09-8741-7e582e7f1e8e" >
+			<when expression="#[payload.email==vars.employee_detail.email]">
+				<ee:transform doc:name="Transform Message" doc:id="5a01229f-efb0-49d8-8bb6-09e128f5df30" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	statusCode:208,
+	payload:payload
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+			<otherwise >
+				<ee:transform doc:name="Transform Message" doc:id="6252fa17-f688-4759-b233-19f9bdf1e6d2" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	statusCode:200,
+	payload:payload
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</otherwise>
+		</choice>
+	</flow>
+</mule>
